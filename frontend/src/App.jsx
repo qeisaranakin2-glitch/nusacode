@@ -33,15 +33,53 @@ export default function App() {
   async function compile() {
     setBusy(true);
     setActiveTab('output');
-    try {
-      const response = await fetch('http://127.0.0.1:5000/api/compile', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({code})
+
+    // Mengambil URL dari Environment Variable Vercel
+    const API_URL = import.meta.env.VITE_API_URL;
+
+    // Pengecekan jika env var belum diset di Vercel
+    if (!API_URL) {
+      setResult({
+        success: false,
+        error: {
+          stage: 'Config Error',
+          message: 'VITE_API_URL belum diset. Buka Settings Vercel -> Environment Variables, pastikan Type-nya Config dan namanya VITE_API_URL. Jangan lupa Redeploy!',
+          line: 1,
+          column: 1
+        }
       });
+      setBusy(false);
+      return;
+    }
+
+    try {
+      // Menggunakan template literal untuk menyambung URL dan endpoint
+      const response = await fetch(`${API_URL}/api/compile`, {
+        method: 'POST', 
+        headers: {'Content-Type': 'application/json'}, 
+        body: JSON.stringify({code})
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP Error ${response.status}`);
+      }
+
       const data = await response.json();
       setResult(data);
-    } catch {
-      setResult({success:false, error:{stage:'Connection', message:'Backend Python tidak terhubung. Jalankan Flask pada port 5000.', line:1, column:1}});
-    } finally { setBusy(false); }
+    } catch (err) {
+      // Menampilkan error asli agar mudah dilacak
+      setResult({
+        success: false, 
+        error: {
+          stage: 'Connection Error', 
+          message: `Gagal konek ke ${API_URL}. Pesan sistem: ${err.message}. Cek apakah backend menyala dan CORS diizinkan.`, 
+          line: 1, 
+          column: 1
+        }
+      });
+    } finally { 
+      setBusy(false); 
+    }
   }
 
   function loadExample(name) { setExample(name); setCode(examples[name]); setResult(null); }
@@ -74,7 +112,7 @@ export default function App() {
         <div className="tab-bar">{tabs.map(([id,label])=><button key={id} className={activeTab===id?'active':''} onClick={()=>setActiveTab(id)}>{label}{id==='output'&&result?.success&&<span className="tab-count">{result.output?.length||0}</span>}{id==='tokens'&&result?.success&&<span className="tab-count">{result.tokens?.length||0}</span>}</button>)}</div>
         <div className="console-content">
           {!result && <div className="empty-state"><div className="empty-icon"><Command size={22}/></div><b>Console is ready</b><p>Tekan <strong>Compile & Run</strong> untuk memproses program pertamamu.</p></div>}
-          {result && !result.success && <div className="error-panel"><div className="error-icon"><Bug size={17}/></div><div><b>{result.error?.stage || 'Error'} Error</b><p>{result.error?.message}</p><small>Line {result.error?.line} · Column {result.error?.column}</small></div></div>}
+          {result && !result.success && <div className="error-panel"><div className="error-icon"><Bug size={17}/></div><div><b>{result.error?.stage || 'Error'}</b><p>{result.error?.message}</p><small>Line {result.error?.line} · Column {result.error?.column}</small></div></div>}
           {result?.success && activeTab==='output' && <div className="output-view"><div className="success-line"><Check size={14}/> Program executed successfully</div>{result.output.length ? result.output.map((line,i)=><div className="output-line" key={i}><span>{String(i+1).padStart(2,'0')}</span>{line}</div>) : <div className="muted">Program selesai tanpa output.</div>}</div>}
           {result?.success && activeTab==='tokens' && <div className="table-scroll"><table><thead><tr><th>#</th><th>TYPE</th><th>VALUE</th><th>POSITION</th></tr></thead><tbody>{result.tokens.map((t,i)=><tr key={i}><td>{i+1}</td><td><span className="token-type">{t.type}</span></td><td className="mono">{String(t.value)}</td><td>{t.line}:{t.column}</td></tr>)}</tbody></table></div>}
           {result?.success && activeTab==='ast' && <pre className="json-view">{JSON.stringify(result.ast,null,2)}</pre>}
